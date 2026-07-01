@@ -28,20 +28,40 @@ class TweetRequest(BaseModel):
 @app.post("/generate_tweet")
 async def generate_tweet(req: TweetRequest):
     # ==========================================
-    # 商业核心防白嫖逻辑 (Auth Simulator)
-    # 真实的场景这里会向 Lemon Squeezy 的 API 查询这张卡是否被人刷退款了、过期了没
+    # 真实的商业支付与授权校验 (Lemon Squeezy API)
+    # 每次生成前，去 Lemon Squeezy 官网查验这个 Key 是否真实付款且有效
     # ==========================================
-    VALID_KEYS = ["TEST-VIP-888", "HAYE-PRO-2026"] 
-    
-    if req.license_key not in VALID_KEYS:
-        print(f"⛔ 拦截！有人试图用无效卡密请求服务：{req.license_key}")
-        # 如果卡密不对，直接拒绝服务，根本不去呼叫 DeepSeek，不花你一分钱
-        return {
-            "success": False, 
-            "error": "无效或已过期的 License Key。请点击右上角获取正版授权！"
-        }
-    
-    print(f"✅ 尊贵的 VIP 用户 ({req.license_key}) 来了！开始干活...")
+    if not req.license_key:
+        return {"success": False, "error": "请输入 License Key！"}
+        
+    # 保留一个测试用的后门 Key，方便你自己开发时可以免费无限调用
+    if req.license_key != "TEST-VIP-888":
+        import httpx
+        print(f"🔄 正在向 Lemon Squeezy 验证真实的卡密: {req.license_key} ...")
+        try:
+            # 向 Lemon Squeezy 的官方发卡鉴权服务器发请求
+            async with httpx.AsyncClient() as http_client:
+                ls_response = await http_client.post(
+                    "https://api.lemonsqueezy.com/v1/licenses/validate",
+                    json={"license_key": req.license_key},
+                    headers={"Accept": "application/json"}
+                )
+            
+            ls_data = ls_response.json()
+            
+            # Lemon Squeezy 官方文档规定：如果 valid 为 False，说明卡密造假、过期、或者已被买家退款！
+            if not ls_data.get("valid"):
+                error_msg = ls_data.get("error", "无效的 License Key")
+                print(f"⛔ 拦截！此卡密被 Lemon Squeezy 官方拒绝：{error_msg}")
+                return {
+                    "success": False, 
+                    "error": f"付款凭证无效或已退款 ({error_msg})。请支持正版！"
+                }
+        except Exception as e:
+            print(f"连接支付验证服务器失败: {e}")
+            return {"success": False, "error": "验证支付服务器时网络超时，请稍后再试。"}
+            
+    print(f"✅ 尊贵的付费用户 ({req.license_key}) 身份核验通过！开始呼叫 AI...")
     
     prompt = f"""
     你是一个拥有百万粉丝的 Twitter (X) 营销专家。
