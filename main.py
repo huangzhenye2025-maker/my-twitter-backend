@@ -15,7 +15,7 @@ app.add_middleware(
 )
 
 # 这里是你的核心资产，绝对不能泄露
-API_KEY = "123"
+API_KEY = os.environ.get("DEEPSEEK_API_KEY")
 client = OpenAI(api_key=API_KEY, base_url="https://api.deepseek.com")
 
 # 1. 修改前端必须传来的数据包格式，强制加上 license_key
