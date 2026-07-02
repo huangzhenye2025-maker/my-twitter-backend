@@ -59,24 +59,40 @@ async def generate_tweet(req: TweetRequest):
         
     if req.license_key != "TEST-VIP-888":
         import httpx
-        print(f"🔄 正在向 Lemon Squeezy 验证真实的卡密: {req.license_key} ...")
+        print(f"🔄 正在向 Gumroad 验证真实的卡密: {req.license_key} ...")
+        # Gumroad 需要商品专属的 product_id 才能进行卡密校验
+        product_id = os.environ.get("GUMROAD_PRODUCT_ID", "")
+        if not product_id:
+            print("⚠️ 警告：后端未配置 GUMROAD_PRODUCT_ID 环境变量！")
+            return {"success": False, "error": "系统配置错误：找不到商品 ID。请联系开发者。"}
+            
         try:
             async with httpx.AsyncClient() as http_client:
-                ls_response = await http_client.post(
-                    "https://api.lemonsqueezy.com/v1/licenses/validate",
-                    json={"license_key": req.license_key},
-                    headers={"Accept": "application/json"}
+                gr_response = await http_client.post(
+                    "https://api.gumroad.com/v2/licenses/verify",
+                    data={
+                        "product_id": product_id,
+                        "license_key": req.license_key,
+                        "increment_uses_count": "true"
+                    }
                 )
             
-            ls_data = ls_response.json()
+            gr_data = gr_response.json()
             
-            if not ls_data.get("valid"):
-                error_msg = ls_data.get("error", "无效的 License Key")
-                print(f"⛔ 拦截！此卡密被 Lemon Squeezy 官方拒绝：{error_msg}")
+            if not gr_data.get("success"):
+                error_msg = gr_data.get("message", "无效的 License Key")
+                print(f"⛔ 拦截！此卡密被 Gumroad 官方拒绝：{error_msg}")
                 return {
                     "success": False, 
-                    "error": f"付款凭证无效或已退款 ({error_msg})。请支持正版！"
+                    "error": f"付款凭证无效或不存在 ({error_msg})。请支持正版！"
                 }
+                
+            # 可选增强防御：检查是否被退款 (refunded) 或有争议 (disputed)
+            purchase = gr_data.get("purchase", {})
+            if purchase.get("refunded") or purchase.get("disputed") or purchase.get("chargebacked"):
+                print("⛔ 拦截！此卡密对应的订单已退款或撤销。")
+                return {"success": False, "error": "此卡密对应的订单已退款，无法继续使用。"}
+                
         except Exception as e:
             print(f"连接支付验证服务器失败: {e}")
             return {"success": False, "error": "验证支付服务器时网络超时，请稍后再试。"}
