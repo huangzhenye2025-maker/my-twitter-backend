@@ -3,8 +3,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from openai import OpenAI
+import time
 
 app = FastAPI()
+
+# 记录每个 license_key 的请求时间戳
+# 格式: {"key1": [timestamp1, timestamp2], "key2": [...]}
+request_counts = {}
 
 app.add_middleware(
     CORSMiddleware,
@@ -15,7 +20,7 @@ app.add_middleware(
 )
 
 # 这里是你的核心资产，绝对不能泄露
-API_KEY = os.environ.get("DEEPSEEK_API_KEY")
+API_KEY = "123"
 client = OpenAI(api_key=API_KEY, base_url="https://api.deepseek.com")
 
 # 1. 修改前端必须传来的数据包格式，强制加上 license_key
@@ -33,6 +38,24 @@ async def generate_tweet(req: TweetRequest):
     # ==========================================
     if not req.license_key:
         return {"success": False, "error": "请输入 License Key！"}
+        
+    # --- 核心防刷机制 (Rate Limiting) 开始 ---
+    now = time.time()
+    # 如果这个 key 以前请求过，过滤出最近 60 秒内的请求记录
+    if req.license_key in request_counts:
+        recent_requests = [t for t in request_counts[req.license_key] if now - t < 60]
+        request_counts[req.license_key] = recent_requests
+        
+        # 限制：每 60 秒最多允许 3 次请求
+        if len(recent_requests) >= 3:
+            print(f"🚨 触发防刷保护：{req.license_key} 请求频率超限！")
+            return {"success": False, "error": "您的请求太频繁啦！为保护服务器，请 1 分钟后再试。"}
+    else:
+        request_counts[req.license_key] = []
+        
+    # 记录当前的请求时间
+    request_counts[req.license_key].append(now)
+    # --- 防刷机制结束 ---
         
     # 保留一个测试用的后门 Key，方便你自己开发时可以免费无限调用
     if req.license_key != "TEST-VIP-888":
