@@ -128,8 +128,13 @@ async def generate_tweet(req: TweetRequest):
         return {"success": True, "tweet": tweet}
         
     except Exception as e:
-        print(f"调用 API 失败: {e}")
-        return {"success": False, "error": str(e)}
+        error_str = str(e).lower()
+        if "insufficient" in error_str or "balance" in error_str or "402" in error_str:
+            print(f"🚨 API 余额不足报错: {e}")
+            return {"success": False, "error": "AI 服务器欠费停机啦！请发邮件提醒开发者充值 (support@x-maker.com)。"}
+        else:
+            print(f"🚨 调用 API 失败: {e}")
+            return {"success": False, "error": f"服务器连接出错了，如果持续报错，请联系 support@x-maker.com ({str(e)[:50]})"}
 
 if __name__ == "__main__":
     import uvicorn
