@@ -24,46 +24,43 @@ import os
 API_KEY = os.environ.get("DEEPSEEK_API_KEY")
 client = OpenAI(api_key=API_KEY, base_url="https://api.deepseek.com")
 
-# 1. 修改前端必须传来的数据包格式，强制加上 license_key
+# 1. 修改前端必须传来的数据包格式，强制加上 license_key 和个性化配置
 class TweetRequest(BaseModel):
     title: str
     text: str
     lang: str = "English"
-    license_key: str = ""  # 新增字段
+    license_key: str = ""
+    tone: str = "Professional"
+    custom_prompt: str = ""
+    include_hashtags: bool = True
 
 @app.post("/generate_tweet")
 async def generate_tweet(req: TweetRequest):
     # ==========================================
     # 真实的商业支付与授权校验 (Lemon Squeezy API)
-    # 每次生成前，去 Lemon Squeezy 官网查验这个 Key 是否真实付款且有效
     # ==========================================
     if not req.license_key:
         return {"success": False, "error": "请输入 License Key！"}
         
     # --- 核心防刷机制 (Rate Limiting) 开始 ---
     now = time.time()
-    # 如果这个 key 以前请求过，过滤出最近 60 秒内的请求记录
     if req.license_key in request_counts:
         recent_requests = [t for t in request_counts[req.license_key] if now - t < 60]
         request_counts[req.license_key] = recent_requests
         
-        # 限制：每 60 秒最多允许 3 次请求
         if len(recent_requests) >= 3:
             print(f"🚨 触发防刷保护：{req.license_key} 请求频率超限！")
             return {"success": False, "error": "您的请求太频繁啦！为保护服务器，请 1 分钟后再试。"}
     else:
         request_counts[req.license_key] = []
         
-    # 记录当前的请求时间
     request_counts[req.license_key].append(now)
     # --- 防刷机制结束 ---
         
-    # 保留一个测试用的后门 Key，方便你自己开发时可以免费无限调用
     if req.license_key != "TEST-VIP-888":
         import httpx
         print(f"🔄 正在向 Lemon Squeezy 验证真实的卡密: {req.license_key} ...")
         try:
-            # 向 Lemon Squeezy 的官方发卡鉴权服务器发请求
             async with httpx.AsyncClient() as http_client:
                 ls_response = await http_client.post(
                     "https://api.lemonsqueezy.com/v1/licenses/validate",
@@ -73,7 +70,6 @@ async def generate_tweet(req: TweetRequest):
             
             ls_data = ls_response.json()
             
-            # Lemon Squeezy 官方文档规定：如果 valid 为 False，说明卡密造假、过期、或者已被买家退款！
             if not ls_data.get("valid"):
                 error_msg = ls_data.get("error", "无效的 License Key")
                 print(f"⛔ 拦截！此卡密被 Lemon Squeezy 官方拒绝：{error_msg}")
@@ -87,18 +83,36 @@ async def generate_tweet(req: TweetRequest):
             
     print(f"✅ 尊贵的付费用户 ({req.license_key}) 身份核验通过！开始呼叫 AI...")
     
+    # 动态构建 Prompt 引擎
+    tone_instruction = ""
+    if req.tone == "Tech Bro":
+        tone_instruction = "语气要像硅谷的科技大佬，喜欢用高大上的词汇，充满激情地分享见解。"
+    elif req.tone == "Funny":
+        tone_instruction = "语气要极其幽默、机智，最好带点自嘲或网络梗。"
+    elif req.tone == "Thread":
+        tone_instruction = "输出格式为一个推特长文 (Thread)，用 1/ 2/ 3/ 这样分段，层层递进地讲述核心观点。"
+    else:
+        tone_instruction = "语气要专业、严谨、有洞察力，适合行业专家的人设。"
+        
+    hashtag_instruction = "结尾加上 2-3 个相关的 Hashtag #标签。" if req.include_hashtags else "千万不要输出任何 Hashtag 标签。"
+    
+    custom_instruction = f"【特别注意用户的自定义指令】：{req.custom_prompt}" if req.custom_prompt.strip() else ""
+
     prompt = f"""
     你是一个拥有百万粉丝的 Twitter (X) 营销专家。
     网页标题：【{req.title}】
     部分内容：【{req.text}】
-    请帮我把这个网页的核心内容总结成一条吸引人的推文。
-    要求：
+    请帮我把这个网页的核心内容总结成推文。
+    
+    具体要求如下：
     1. 使用语言：{req.lang}
-    2. 包含 2-3 个合适的 Emoji 🌟
-    3. 结尾加上 2 个相关的 Hashtag #标签
-    4. 语气要懂王、有煽动性。
-    5. 长度不超过 280 个字符。
-    6. 直接输出推文内容，不要说废话。
+    2. 人设与语气风格：{tone_instruction}
+    3. 视觉元素：包含 1-3 个合适的 Emoji 🌟
+    4. 标签控制：{hashtag_instruction}
+    5. 长度限制：除了 Thread 风格，其余单条推文不得超过 280 个字符。
+    {custom_instruction}
+    
+    直接输出最终的推文内容，不要有任何前言后语和解释废话。
     """
     
     try:
