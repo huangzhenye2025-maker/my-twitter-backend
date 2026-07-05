@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from openai import OpenAI
 import time
+import httpx
 
 app = FastAPI()
 
@@ -28,6 +29,7 @@ client = OpenAI(api_key=API_KEY, base_url="https://api.deepseek.com")
 class TweetRequest(BaseModel):
     title: str
     text: str
+    url: str = ""
     lang: str = "English"
     license_key: str = ""
     tone: str = "Professional"
@@ -58,7 +60,6 @@ async def generate_tweet(req: TweetRequest):
     # --- 防刷机制结束 ---
         
     if req.license_key != "TEST-VIP-888":
-        import httpx
         print(f"🔄 正在向 Gumroad 验证真实的卡密: {req.license_key} ...")
         # Gumroad 需要商品专属的 product_id 才能进行卡密校验
         product_id = os.environ.get("GUMROAD_PRODUCT_ID", "")
@@ -114,10 +115,42 @@ async def generate_tweet(req: TweetRequest):
     
     custom_instruction = f"【特别注意用户的自定义指令】：{req.custom_prompt}" if req.custom_prompt.strip() else ""
 
+    # ==========================================
+    # Firecrawl 高级网页抓取逻辑
+    # ==========================================
+    markdown_content = req.text
+    if req.url:
+        print(f"🕷️ 正在使用 Firecrawl 抓取纯净内容: {req.url}")
+        firecrawl_key = os.environ.get("FIRECRAWL_API_KEY", "")
+        if firecrawl_key:
+            try:
+                # 抓取可能需要一点时间，设置 30 秒超时
+                async with httpx.AsyncClient(timeout=30.0) as http_client:
+                    fc_response = await http_client.post(
+                        "https://api.firecrawl.dev/v1/scrape",
+                        headers={
+                            "Authorization": f"Bearer {firecrawl_key}",
+                            "Content-Type": "application/json"
+                        },
+                        json={"url": req.url, "formats": ["markdown"]}
+                    )
+                fc_data = fc_response.json()
+                if fc_data.get("success"):
+                    # Firecrawl 可能会返回很长的文章，截取前 10000 个字符避免 token 超出
+                    markdown_content = fc_data.get("data", {}).get("markdown", req.text)[:10000]
+                    print("✅ Firecrawl 抓取成功，获取到干净的 Markdown！")
+                else:
+                    print(f"⚠️ Firecrawl API 返回错误，降级使用原始文本: {fc_data}")
+            except Exception as e:
+                print(f"⚠️ Firecrawl 连接超时或失败，降级使用插件自带文本: {e}")
+        else:
+            print("⚠️ 未配置 FIRECRAWL_API_KEY 环境变量，降级使用插件自带文本。")
+
     prompt = f"""
     你是一个拥有百万粉丝的 Twitter (X) 营销专家。
     网页标题：【{req.title}】
-    部分内容：【{req.text}】
+    文章内容(Markdown格式)：
+    【{markdown_content}】
     请帮我把这个网页的核心内容总结成推文。
     
     具体要求如下：
