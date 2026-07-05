@@ -2,6 +2,13 @@
 
 This is the official backend server for the **X-Maker Pro** Chrome Extension. It is built with FastAPI and designed to be deployed on platforms like Render.
 
+## 🔗 Architecture & Repositories
+
+This product is built using a modern decoupled architecture. There are two main repositories:
+
+1. **[my-twitter-backend](https://github.com/huangzhenye2025-maker/my-twitter-backend) (You are here)**: The engine. Handles DeepSeek AI integration, Firecrawl web scraping, and Gumroad payment verification. Hosted on Render.
+2. **[x-maker-web](https://github.com/huangzhenye2025-maker/x-maker-web)**: The frontend. The official landing page built with Next.js. Handles marketing, user conversion, and policies. Hosted on Vercel.
+
 ## 🌟 Core Features
 
 - **DeepSeek AI Integration**: Connects to the DeepSeek API to transform web content into highly engaging, viral Twitter (X) threads.
