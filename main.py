@@ -158,7 +158,7 @@ async def generate_tweet(req: TweetRequest):
     2. 人设与语气风格：{tone_instruction}
     3. 视觉元素：包含 1-3 个合适的 Emoji 🌟
     4. 标签控制：{hashtag_instruction}
-    5. 长度限制：除了 Thread 风格，其余单条推文不得超过 280 个字符。
+    5. 长度限制：如果用户没有选择 Thread 风格，你必须将输出内容严格控制在 280 个字符（包括空格）以内，绝对不能超字数！
     {custom_instruction}
     
     直接输出最终的推文内容，不要有任何前言后语和解释废话。
