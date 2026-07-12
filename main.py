@@ -433,6 +433,81 @@ async def generate_tweet(req: TweetRequest):
             print(f"🚨 调用 API 失败: {e}")
             return {"success": False, "error": f"服务器连接出错了，如果持续报错，请联系 support@x-maker.com ({str(e)[:50]})"}
 
+@app.get("/admin/stats")
+async def get_admin_stats(secret: str = None):
+    # 安全验证，从环境变量中读取 ADMIN_SECRET
+    admin_secret = os.environ.get("ADMIN_SECRET", "xmaker-secret-888")
+    if not secret or secret != admin_secret:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    # 1. 统计 MongoDB 数据
+    total_licenses = 0
+    active_licenses = 0
+    recent_licenses = []
+    
+    if db_collection is not None:
+        try:
+            total_licenses = db_collection.count_documents({})
+            active_licenses = db_collection.count_documents({"status": "active"})
+            # 获取最近 10 个激活的卡密
+            cursor = db_collection.find({}).sort("created_at", -1).limit(10)
+            for doc in cursor:
+                doc_dict = dict(doc)
+                doc_dict["key"] = doc_dict.get("_id")
+                recent_licenses.append(doc_dict)
+        except Exception as e:
+            print(f"Error querying MongoDB stats: {e}")
+    else:
+        # Fallback to local JSON file
+        if os.path.exists(LICENSES_FILE):
+            try:
+                with open(LICENSES_FILE, "r", encoding="utf-8") as f:
+                    licenses = json.load(f)
+                    total_licenses = len(licenses)
+                    active_licenses = sum(1 for item in licenses.values() if item.get("status") == "active")
+                    sorted_licenses = sorted(
+                        [{"key": k, **v} for k, v in licenses.items()],
+                        key=lambda x: x.get("created_at", 0),
+                        reverse=True
+                    )
+                    recent_licenses = sorted_licenses[:10]
+            except Exception as e:
+                print(f"Error reading local stats fallback: {e}")
+
+    # 2. 查询 DeepSeek API 余额
+    deepseek_balance = "N/A"
+    deepseek_available = False
+    deepseek_key = os.environ.get("DEEPSEEK_API_KEY")
+    if deepseek_key:
+        try:
+            async with httpx.AsyncClient() as client:
+                res = await client.get(
+                    "https://api.deepseek.com/user/balance",
+                    headers={"Authorization": f"Bearer {deepseek_key}"},
+                    timeout=5.0
+                )
+                if res.status_code == 200:
+                    balance_data = res.json()
+                    deepseek_available = balance_data.get("is_available", False)
+                    balance_infos = balance_data.get("balance_infos", [])
+                    if balance_infos:
+                        info = balance_infos[0]
+                        deepseek_balance = f"{info.get('total_balance')} {info.get('currency')}"
+        except Exception as e:
+            print(f"Error querying DeepSeek balance: {e}")
+
+    return {
+        "success": True,
+        "stats": {
+            "total_users": total_licenses,
+            "active_users": active_licenses,
+            "estimated_revenue": round(active_licenses * 9.99, 2),
+            "deepseek_balance": deepseek_balance,
+            "deepseek_available": deepseek_available,
+            "recent_licenses": recent_licenses
+        }
+    }
+
 if __name__ == "__main__":
     import uvicorn
     import os
