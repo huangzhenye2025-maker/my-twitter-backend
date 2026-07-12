@@ -33,6 +33,10 @@ for env_file in [".env", ".env.local", "../.env", "../.env.local", "../x-maker-w
 
 app = FastAPI()
 
+@app.get("/")
+async def root():
+    return {"status": "healthy", "service": "X-Maker AI Backend"}
+
 # 初始化 MongoDB (如果配置了 MONGODB_URI)
 MONGODB_URI = os.environ.get("MONGODB_URI")
 db_client = None
