@@ -4,3 +4,4 @@ pydantic
 openai
 pymongo
 dnspython
+cryptography
