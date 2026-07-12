@@ -34,6 +34,7 @@ for env_file in [".env", ".env.local", "../.env", "../.env.local", "../x-maker-w
 app = FastAPI()
 
 @app.get("/")
+@app.head("/")
 async def root():
     return {"status": "healthy", "service": "X-Maker AI Backend"}
 
